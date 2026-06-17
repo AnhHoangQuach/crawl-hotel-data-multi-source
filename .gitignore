@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+
+hotels_result.json
+*.result.json
+hotel_result.md
+
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,149 @@
+import re
+
+from . import config, extraction
+from .matching import best_match_index, best_suggestion_index
+
+
+def empty_result(name, address):
+    return {
+        "query_name": name,
+        "query_address": address,
+        "match_score": None,
+        "low_confidence": None,
+        "name": None,
+        "accommodation_type": None,
+        "star_rating": None,
+        "rating_summary": None,
+        "address": None,
+        "latitude": None,
+        "longitude": None,
+        "amenities": None,
+        "facilities": None,
+        "description": None,
+        "reviews": [],
+        "rooms": [],
+        "photos": [],
+        "detail_url": None,
+        "error": None,
+    }
+
+
+class HotelScraper:
+    """Drives one Playwright page through Traveloka's search flow and pulls
+    full detail-page data for the closest-matching hotel card.
+
+    Bound as a crawl4ai `after_goto` hook, so `target_name`/`target_address`
+    must be set on the instance before each `crawler.arun()` call.
+    """
+
+    def __init__(self):
+        self.target_name = None
+        self.target_address = None
+        self.result = None
+
+    async def after_goto_hook(self, page, context=None, **kwargs):
+        result = empty_result(self.target_name, self.target_address)
+        self.result = result
+
+        try:
+            suggestion_score = await self._open_search_results(page)
+            best_idx, card_score = await self._pick_best_match(page)
+
+            # Overall confidence is bounded by whichever step was least sure:
+            # a great card match means nothing if the autocomplete already
+            # sent us into the wrong city/country.
+            score = min(suggestion_score, card_score)
+            result["match_score"] = round(score, 3)
+            result["low_confidence"] = score < config.MATCH_SCORE_THRESHOLD
+
+            if result["low_confidence"]:
+                # Don't bother opening the detail page -- whatever card we'd
+                # click is probably the wrong hotel, so returning its data
+                # would be worse than returning nothing.
+                result["error"] = (
+                    f"Bo qua: khong tim thay khach san khop du tin cay "
+                    f"(score={score:.2f} < {config.MATCH_SCORE_THRESHOLD}). "
+                    "Kiem tra lai ten/dia chi trong CSV."
+                )
+                return
+
+            name_el = page.locator(config.HOTEL_CARD_NAME_SELECTOR).nth(best_idx)
+            async with context.expect_page() as new_page_info:
+                await name_el.click(timeout=5000, force=True)
+            detail_page = await new_page_info.value
+            await detail_page.wait_for_load_state("domcontentloaded", timeout=20000)
+            await detail_page.wait_for_timeout(5000)
+
+            await self._extract_detail(detail_page, result)
+            await detail_page.close()
+        except Exception as e:
+            result["error"] = str(e)
+
+    async def _open_search_results(self, page):
+        await page.wait_for_timeout(3000)
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+        await page.wait_for_timeout(500)
+
+        # Default landing tab is "All" (hotels + villas + apartments mixed
+        # in); pinning to "Hotels" keeps results/autocomplete scoped to
+        # actual hotels, which is what query_name/query_address are for.
+        try:
+            hotels_tab = page.locator(config.ACCOM_TYPE_PICKER_SELECTOR).get_by_text(
+                "Hotels", exact=True
+            ).first
+            await hotels_tab.click(timeout=5000, force=True)
+            await page.wait_for_timeout(500)
+        except Exception:
+            pass
+
+        search_box = page.locator(config.SEARCH_INPUT_SELECTOR)
+        # Generous timeout: through a slow/degraded free proxy the page can
+        # respond (HTTP 200) long before it's actually finished hydrating.
+        await search_box.wait_for(state="visible", timeout=45000)
+        await search_box.click()
+        await page.wait_for_timeout(200)
+        await search_box.press_sequentially(self.target_name, delay=80)
+        await page.wait_for_timeout(1500)
+
+        suggestions = page.locator(config.SUGGESTION_ITEM_SELECTOR)
+        await suggestions.first.wait_for(state="visible", timeout=10000)
+        suggestion_texts = await extraction.extract_all_texts(page, config.SUGGESTION_ITEM_SELECTOR)
+
+        suggestion_idx, suggestion_score = best_suggestion_index(
+            self.target_name, self.target_address, suggestion_texts
+        )
+        await suggestions.nth(suggestion_idx).click(force=True)
+        await page.wait_for_timeout(700)
+
+        await page.locator(config.SEARCH_SUBMIT_SELECTOR).click(timeout=5000, force=True)
+        await page.wait_for_url(re.compile(r".*/hotel/search.*"), timeout=15000)
+        await page.wait_for_timeout(4000)
+        return suggestion_score
+
+    async def _pick_best_match(self, page):
+        name_el = page.locator(config.HOTEL_CARD_NAME_SELECTOR).first
+        await name_el.wait_for(state="visible", timeout=10000)
+
+        names = await extraction.extract_all_texts(page, config.HOTEL_CARD_NAME_SELECTOR)
+        locations = await extraction.extract_all_texts(page, config.HOTEL_CARD_LOCATION_SELECTOR)
+        if not names:
+            return 0, 0.0
+        return best_match_index(self.target_name, self.target_address, names, locations)
+
+    async def _extract_detail(self, detail_page, result):
+        result["detail_url"] = detail_page.url
+        result["name"] = await extraction.extract_text(detail_page, config.DISPLAY_NAME_SELECTOR)
+        result["accommodation_type"] = await extraction.extract_text(detail_page, config.ACCOM_TYPE_SELECTOR)
+        result["star_rating"] = await extraction.extract_text(detail_page, config.STAR_RATING_SELECTOR)
+        result["rating_summary"] = await extraction.extract_text(detail_page, config.REVIEW_RATING_SELECTOR)
+        result["address"] = await extraction.extract_text(detail_page, config.ADDRESS_SELECTOR)
+        result["latitude"], result["longitude"] = await extraction.extract_coordinates(detail_page)
+        result["amenities"] = await extraction.extract_text(detail_page, config.AMENITIES_SELECTOR)
+        result["facilities"] = await extraction.extract_text(detail_page, config.FACILITIES_SELECTOR)
+        result["description"] = await extraction.extract_text(detail_page, config.DESCRIPTION_SELECTOR)
+        result["rooms"] = await extraction.extract_rooms(detail_page)
+        result["photos"] = await extraction.extract_gallery_photos(detail_page)
+        result["reviews"] = await extraction.extract_full_reviews(detail_page)
