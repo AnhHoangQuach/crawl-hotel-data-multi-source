@@ -45,13 +45,3 @@ LATLNG_RE = re.compile(
 MAX_REVIEW_PAGES = 5
 MAX_PHOTOS = 60
 MAX_ROOMS = 20
-
-# Below this, the picked hotel card is probably wrong -- either Traveloka's
-# autocomplete ranking went off into an unrelated city/country, or the only
-# "best" candidate just happens to share a generic location with the query
-# (e.g. "Soul Boutique Hotel Phu Quoc" scored 0.46 against query "THE SEA
-# PHU QUOC" / "Kien Giang" purely on shared province text). Empirically,
-# correct matches in testing scored 0.67-0.74; wrong ones scored 0.28-0.46 --
-# 0.5 sits in the gap. The result is still returned but flagged so it isn't
-# mistaken for a real match.
-MATCH_SCORE_THRESHOLD = 0.5

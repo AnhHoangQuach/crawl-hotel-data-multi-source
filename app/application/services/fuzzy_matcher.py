@@ -1,9 +1,10 @@
 import re
 import unicodedata
 from difflib import SequenceMatcher
+from typing import List, Tuple
 
 
-def normalize(text):
+def normalize(text: str) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKD", text)
@@ -13,14 +14,19 @@ def normalize(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def similarity(a, b):
+def similarity(a: str, b: str) -> float:
     a, b = normalize(a), normalize(b)
     if not a or not b:
         return 0.0
     return SequenceMatcher(None, a, b).ratio()
 
 
-def best_match_index(query_name, query_address, candidate_names, candidate_locations):
+def best_match_index(
+    query_name: str,
+    query_address: str,
+    candidate_names: List[str],
+    candidate_locations: List[str],
+) -> Tuple[int, float]:
     """Pick the candidate whose name + location best matches the query.
 
     Name similarity is weighted higher since it's the primary identifier;
@@ -37,15 +43,17 @@ def best_match_index(query_name, query_address, candidate_names, candidate_locat
     return best_idx, best_score
 
 
-def best_suggestion_index(query_name, query_address, suggestion_texts):
-    """Pick the autocomplete suggestion that best matches the query.
+def best_suggestion_index(
+    query_name: str, query_address: str, suggestion_texts: List[str]
+) -> Tuple[int, float]:
+    """Pick the search/autocomplete suggestion that best matches the query.
 
-    Traveloka's own autocomplete ranking is sometimes wrong for unusual or
-    ambiguous names (e.g. it once ranked "Kansai International Airport"
-    above any Phu Quoc hotel for the query "THE SEA PHU QUOC"), so we
-    re-rank the visible suggestions ourselves instead of always taking the
-    first one. Each suggestion is a multi-line blob (name/type/location),
-    scored as one block against "name + address" combined.
+    Provider autocomplete ranking is sometimes wrong for unusual or ambiguous
+    names (e.g. Traveloka once ranked "Kansai International Airport" above
+    any Phu Quoc hotel for the query "THE SEA PHU QUOC"), so callers re-rank
+    the visible suggestions themselves instead of always taking the first
+    one. Each suggestion is scored as one block against "name + address"
+    combined.
     """
     query = f"{query_name} {query_address}".strip()
     best_idx, best_score = 0, -1.0

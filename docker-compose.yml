@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    image: crawl-traveloka:latest
+    # .env is optional: only needed if you're using the TripAdvisor/Booking.com
+    # providers (RAPIDAPI_KEY). Traveloka-only crawls work without it.
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/app/output
