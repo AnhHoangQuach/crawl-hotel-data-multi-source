@@ -1,34 +1,9 @@
 import re
 
+from ..dom_extraction import extract_all_texts, extract_text, human_delay, safe_inner_text
 from . import config
 
 SCORE_LINE_RE = re.compile(r"\d+(?:\.\d+)?\s*/\s*10")
-
-
-async def safe_inner_text(locator):
-    try:
-        if await locator.count():
-            return (await locator.inner_text()).strip()
-    except Exception:
-        pass
-    return None
-
-
-async def extract_text(page, selector):
-    return await safe_inner_text(page.locator(selector).first)
-
-
-async def extract_all_texts(page, selector):
-    out = []
-    try:
-        loc = page.locator(selector)
-        for i in range(await loc.count()):
-            text = await safe_inner_text(loc.nth(i))
-            if text is not None:
-                out.append(text)
-    except Exception:
-        pass
-    return out
 
 
 async def extract_coordinates(page):
@@ -52,12 +27,12 @@ async def extract_gallery_photos(detail_page, max_photos=config.MAX_PHOTOS):
         big = detail_page.locator(config.BIG_THUMBNAIL_SELECTOR).first
         if await big.count():
             await big.click(timeout=5000, force=True)
-            await detail_page.wait_for_timeout(1200)
+            await human_delay(detail_page)
 
         see_more = detail_page.locator(config.SEE_MORE_PHOTOS_SELECTOR).first
         if await see_more.count():
             await see_more.click(timeout=5000, force=True)
-            await detail_page.wait_for_timeout(2000)
+            await human_delay(detail_page)
 
         lightbox = detail_page.locator(config.PHOTO_LIGHTBOX_SELECTOR)
         if await lightbox.count():
@@ -86,7 +61,7 @@ async def extract_gallery_photos(detail_page, max_photos=config.MAX_PHOTOS):
         close_btn = detail_page.locator(config.PHOTO_LIGHTBOX_CLOSE_SELECTOR).first
         if await close_btn.count():
             await close_btn.click(timeout=3000, force=True)
-            await detail_page.wait_for_timeout(500)
+            await human_delay(detail_page)
     except Exception:
         pass
     return photos
@@ -141,7 +116,7 @@ async def extract_full_reviews(detail_page, max_pages=config.MAX_REVIEW_PAGES):
         link = detail_page.locator(config.REVIEW_TAB_LINK_SELECTOR).first
         if await link.count():
             await link.click(timeout=5000, force=True)
-            await detail_page.wait_for_timeout(2000)
+            await human_delay(detail_page)
     except Exception:
         return reviews
 
@@ -167,7 +142,7 @@ async def extract_full_reviews(detail_page, max_pages=config.MAX_REVIEW_PAGES):
             if await next_btn.get_attribute("aria-disabled") == "true":
                 break
             await next_btn.click(timeout=5000, force=True)
-            await detail_page.wait_for_timeout(2000)
+            await human_delay(detail_page)
         except Exception:
             break
 

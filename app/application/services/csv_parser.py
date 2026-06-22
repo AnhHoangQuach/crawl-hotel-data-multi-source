@@ -5,6 +5,8 @@ from typing import List
 from app.domain.entities import HotelQuery
 from app.domain.exceptions import CsvParseError
 
+from .name_normalizer import clean_hotel_name
+
 NAME_HEADER_ALIASES = {"name", "hotel_name", "hotel", "ten", "ten_khach_san"}
 ADDRESS_HEADER_ALIASES = {"address", "city", "location", "dia_chi", "diachi"}
 ID_HEADER_ALIASES = {"id", "hotel_id", "staging_id", "ma_khach_san"}
@@ -44,6 +46,7 @@ def parse_hotel_queries(text: str) -> List[HotelQuery]:
         name = (row.get(name_col) or "").strip()
         if not name:
             continue
+        name = clean_hotel_name(name)
         address = (row.get(addr_col) or "").strip() if addr_col else ""
         row_id = (row.get(id_col) or "").strip() if id_col else ""
         queries.append(HotelQuery(name=name, address=address, id=row_id or None))

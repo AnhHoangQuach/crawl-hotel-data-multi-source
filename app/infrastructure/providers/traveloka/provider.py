@@ -6,8 +6,8 @@ from app.domain.entities import HotelQuery, HotelResult
 from app.infrastructure.config import Settings
 from app.infrastructure.providers.base import BaseHotelProvider
 
+from ..free_proxy import get_working_proxies
 from .config import HOMEPAGE_URL
-from .proxy import get_working_proxies
 from .scraper import SOURCE_NAME, HotelScraper
 
 logger = logging.getLogger(__name__)

@@ -16,19 +16,6 @@ class Settings(BaseSettings):
     port: int = 8000
     output_dir: str = "output"
 
-    # --- RapidAPI (shared key, per-provider host/path overrides) ---
-    rapidapi_key: str = ""
-
-    tripadvisor_rapidapi_host: str = "tripadvisor-scraper.p.rapidapi.com"
-    tripadvisor_search_path: str = "/hotels/search"
-    tripadvisor_details_path: str = "/hotels/detail"
-
-    booking_rapidapi_host: str = "booking-com15.p.rapidapi.com"
-    booking_search_destination_path: str = "/api/v1/hotels/searchDestination"
-    booking_search_hotels_path: str = "/api/v1/hotels/searchHotels"
-    booking_details_path: str = "/api/v1/hotels/getHotelDetails"
-    booking_currency_code: str = "VND"
-
     # --- Shared provider tuning ---
     # Below this, the picked search result is probably the wrong hotel --
     # either the provider's own ranking went off into an unrelated city/

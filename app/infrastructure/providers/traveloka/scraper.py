@@ -4,6 +4,7 @@ from typing import Optional
 from app.application.services.fuzzy_matcher import best_match_index, best_suggestion_index
 from app.domain.entities import HotelQuery, HotelResult
 
+from ..dom_extraction import human_delay
 from . import config, extraction
 
 SOURCE_NAME = "traveloka"
@@ -53,7 +54,7 @@ class HotelScraper:
                 await name_el.click(timeout=5000, force=True)
             detail_page = await new_page_info.value
             await detail_page.wait_for_load_state("domcontentloaded", timeout=20000)
-            await detail_page.wait_for_timeout(5000)
+            await human_delay(detail_page)
 
             await self._extract_detail(detail_page, result)
             await detail_page.close()
@@ -61,12 +62,12 @@ class HotelScraper:
             result.error = str(e)
 
     async def _open_search_results(self, page):
-        await page.wait_for_timeout(3000)
+        await human_delay(page)
         try:
             await page.keyboard.press("Escape")
         except Exception:
             pass
-        await page.wait_for_timeout(500)
+        await human_delay(page)
 
         # Default landing tab is "All" (hotels + villas + apartments mixed
         # in); pinning to "Hotels" keeps results/autocomplete scoped to
@@ -76,7 +77,7 @@ class HotelScraper:
                 "Hotels", exact=True
             ).first
             await hotels_tab.click(timeout=5000, force=True)
-            await page.wait_for_timeout(500)
+            await human_delay(page)
         except Exception:
             pass
 
@@ -85,9 +86,9 @@ class HotelScraper:
         # respond (HTTP 200) long before it's actually finished hydrating.
         await search_box.wait_for(state="visible", timeout=45000)
         await search_box.click()
-        await page.wait_for_timeout(200)
+        await human_delay(page)
         await search_box.press_sequentially(self.query.name, delay=80)
-        await page.wait_for_timeout(1500)
+        await human_delay(page)
 
         suggestions = page.locator(config.SUGGESTION_ITEM_SELECTOR)
         await suggestions.first.wait_for(state="visible", timeout=10000)
@@ -97,11 +98,11 @@ class HotelScraper:
             self.query.name, self.query.address, suggestion_texts
         )
         await suggestions.nth(suggestion_idx).click(force=True)
-        await page.wait_for_timeout(700)
+        await human_delay(page)
 
         await page.locator(config.SEARCH_SUBMIT_SELECTOR).click(timeout=5000, force=True)
         await page.wait_for_url(re.compile(r".*/hotel/search.*"), timeout=15000)
-        await page.wait_for_timeout(4000)
+        await human_delay(page)
         return suggestion_score
 
     async def _pick_best_match(self, page):
