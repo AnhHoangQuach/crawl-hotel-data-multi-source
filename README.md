@@ -149,7 +149,7 @@ id,name,address
 ```bash
 curl -X POST http://localhost:8000/jobs \
   -F "file=@hotels.csv" \
-  -F "source=traveloka"          # or: "traveloka,booking" / "all"
+  -F "source=traveloka"          # or: "traveloka,booking" / "all" (default if omitted)
 ```
 
 Response:
@@ -219,7 +219,7 @@ Not every source fills every field (e.g. TripAdvisor usually doesn't return `roo
 
 Defaults target the two most commonly subscribed RapidAPI products:
 
-- TripAdvisor: **Tripadvisor16** (host `tripadvisor16.p.rapidapi.com`)
+- TripAdvisor: **tripadvisor-scraper** (host `tripadvisor-scraper.p.rapidapi.com`)
 - Booking.com: **Booking-com15** (host `booking-com15.p.rapidapi.com`)
 
 If you're subscribed to a different RapidAPI product (different host/endpoints), no code changes are needed for the host/path itself:
@@ -257,4 +257,5 @@ The image is built on `python:3.12-slim` and runs `crawl4ai-setup` at build time
 
 - **Job store**: kept in the server process's memory, lost on restart. This also means **don't run more than one worker/replica** (e.g. `uvicorn --workers N>1`, multiple compose replicas) — each process would have its own job list, so polling a job created on a different worker would 404. Fine for a single-instance internal tool; if you need multiple instances or long-lived job history, swap `InMemoryJobRepository` for a DB/Redis-backed `JobRepositoryPort` implementation — not needed yet given the current scale.
 - **Traveloka**: relies on public free proxies, so reliability is low; for something more stable, switch to a paid proxy in `app/infrastructure/providers/traveloka/proxy.py`. Reviews are capped at `MAX_REVIEW_PAGES` pages (5 by default) — a large sample, not every review. `rooms` is empty if the hotel has no availability for the default search dates (tomorrow/day after). Traveloka can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/traveloka/config.py`.
-- **TripAdvisor/Booking.com**: the field mapping in `_map_detail()` is best-effort, based on the common response shape of Tripadvisor16/Booking-com15 — it may need tuning to match your actual RapidAPI subscription (see "RapidAPI configuration" above).
+- **TripAdvisor**: the underlying RapidAPI product scrapes TripAdvisor live on each call and is occasionally flaky (intermittent 5xx / empty body) — `client.py` retries transient failures a couple of times before giving up. `rooms` isn't real room inventory (the product doesn't expose room types) — it's the OTA price-comparison list (Booking.com, Expedia, etc.), reshaped into the same dict keys Traveloka's rooms use.
+- **Booking.com**: the field mapping in `_map_detail()` is best-effort, based on the common response shape of Booking-com15 — it may need tuning to match your actual RapidAPI subscription (see "RapidAPI configuration" above).

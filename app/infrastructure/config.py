@@ -19,9 +19,9 @@ class Settings(BaseSettings):
     # --- RapidAPI (shared key, per-provider host/path overrides) ---
     rapidapi_key: str = ""
 
-    tripadvisor_rapidapi_host: str = "tripadvisor16.p.rapidapi.com"
-    tripadvisor_search_path: str = "/api/v1/hotels/searchLocation"
-    tripadvisor_details_path: str = "/api/v1/hotels/getHotelDetails"
+    tripadvisor_rapidapi_host: str = "tripadvisor-scraper.p.rapidapi.com"
+    tripadvisor_search_path: str = "/hotels/search"
+    tripadvisor_details_path: str = "/hotels/detail"
 
     booking_rapidapi_host: str = "booking-com15.p.rapidapi.com"
     booking_search_destination_path: str = "/api/v1/hotels/searchDestination"

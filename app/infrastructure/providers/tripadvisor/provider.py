@@ -18,10 +18,10 @@ class TripAdvisorProvider(BaseHotelProvider):
     re-ranks candidates with the same fuzzy matcher Traveloka uses, then
     fetches full details for the best match.
 
-    Field mapping below targets the "Tripadvisor16" RapidAPI product (see
-    Settings.tripadvisor_*). If you're on a different subscription, only
-    `_map_detail()` and the candidate-label extraction should need changing
-    -- the search/match/fetch flow stays the same.
+    Field mapping below targets the "tripadvisor-scraper" RapidAPI product
+    (see Settings.tripadvisor_*). If you're on a different subscription,
+    only `_map_detail()` and the candidate-label extraction should need
+    changing -- the search/match/fetch flow stays the same.
     """
 
     source_name = SOURCE_NAME
@@ -45,14 +45,22 @@ class TripAdvisorProvider(BaseHotelProvider):
             result.error = "Missing RAPIDAPI_KEY environment variable."
             return result
 
-        search_resp = await client.search_location(self._http, self._settings, query.name)
-        candidates = dig(search_resp, "data", default=[]) or []
+        search_resp = await client.search_location(
+            self._http, self._settings, f"{query.name} {query.address}".strip()
+        )
+        candidates = dig(search_resp, "results", default=[]) or []
+        # The search endpoint mixes in cities/states alongside actual
+        # hotels -- restrict to real hotel entities so the fuzzy matcher
+        # never picks a city/state result for a hotel query.
+        hotel_candidates = [c for c in candidates if dig(c, "place_type") == "HOTEL"]
+        candidates = hotel_candidates or candidates
         if not candidates:
             result.error = "No results found on TripAdvisor."
             return result
 
         labels = [
-            f"{dig(c, 'title', default='')} {dig(c, 'secondaryText', default='')}".strip()
+            f"{dig(c, 'name', default='')} {dig(c, 'address', default='')} "
+            f"{dig(c, 'parent_location', default='')}".strip()
             for c in candidates
         ]
         idx, score = best_suggestion_index(query.name, query.address, labels)
@@ -65,44 +73,64 @@ class TripAdvisorProvider(BaseHotelProvider):
             )
             return result
 
-        location_id = dig(candidates, idx, "locationId") or dig(candidates, idx, "geoId")
+        location_id = dig(candidates, idx, "tripadvisor_entity_id")
         if not location_id:
             result.error = "Could not extract a location id from the TripAdvisor result."
             return result
 
-        detail_resp = await client.get_hotel_details(self._http, self._settings, location_id)
-        detail = dig(detail_resp, "data", default={}) or {}
-        self._map_detail(result, detail)
+        detail = await client.get_hotel_details(self._http, self._settings, location_id)
+        self._map_detail(result, detail or {})
         return result
 
     def _map_detail(self, result: HotelResult, detail: dict) -> None:
         result.name = dig(detail, "name")
-        result.accommodation_type = dig(detail, "accommodationCategory") or dig(
-            detail, "category", "name"
-        )
-        result.star_rating = dig(detail, "hotelClass")
+        result.accommodation_type = (dig(detail, "type") or "").title() or None
+        result.star_rating = dig(detail, "hotel_class") or dig(detail, "hotel_class_attribution")
 
         rating = dig(detail, "rating")
-        review_count = dig(detail, "numberReviews") or dig(detail, "reviewSummary", "count")
+        review_count = dig(detail, "reviews")
         if rating is not None:
             result.rating_summary = (
                 f"{rating} ({review_count} reviews)" if review_count else str(rating)
             )
 
-        result.address = dig(detail, "address") or dig(detail, "addressObj", "addressString")
-        result.latitude = dig(detail, "latitude")
-        result.longitude = dig(detail, "longitude")
+        result.address = dig(detail, "address")
+        result.latitude = dig(detail, "coordinates", "latitude")
+        result.longitude = dig(detail, "coordinates", "longitude")
         result.description = dig(detail, "description")
-        result.detail_url = dig(detail, "webUrl") or dig(detail, "link")
+        result.detail_url = dig(detail, "link")
 
-        amenities = dig(detail, "amenities", default=[]) or []
-        if amenities:
-            result.amenities = ", ".join(a for a in amenities if isinstance(a, str))
+        highlighted = dig(detail, "amenities", "highlighted_amenities", "property_amenities", default=[]) or []
+        non_highlighted = dig(
+            detail, "amenities", "non_highlighted_amenities", "property_amenities", default=[]
+        ) or []
+        if highlighted:
+            result.amenities = ", ".join(highlighted)
+        if non_highlighted:
+            result.facilities = ", ".join(non_highlighted)
 
-        photos = dig(detail, "photos", default=[]) or []
+        images = dig(detail, "images", default=[]) or []
         result.photos = [
-            url for url in (dig(p, "image", "url") or dig(p, "url") for p in photos) if url
+            url for url in (dig(img, "image_link") for img in images) if url
         ][:30]
 
-        reviews = dig(detail, "reviews", default=[]) or []
-        result.reviews = [text for text in (dig(r, "text") for r in reviews) if text]
+        initial_reviews = dig(detail, "initial_reviews", default=[]) or []
+        result.reviews = [text for text in (dig(r, "text") for r in initial_reviews) if text]
+
+        # No real room inventory on this product -- the closest analog is
+        # its OTA price-comparison list, so surface that as "rooms" using
+        # the same dict shape Traveloka's rooms use.
+        offers = (dig(detail, "booking_offers", default=[]) or []) + (
+            dig(detail, "more_booking_offers", default=[]) or []
+        )
+        result.rooms = [
+            {
+                "name": dig(offer, "provider_name"),
+                "bed_type": None,
+                "breakfast": None,
+                "price_summary": dig(offer, "price", "text"),
+                "rooms_left": dig(offer, "rooms_remaining"),
+                "cancellation_policy": None,
+            }
+            for offer in offers
+        ]

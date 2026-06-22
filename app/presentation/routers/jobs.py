@@ -25,7 +25,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.post("", response_model=JobSummaryResponse, status_code=201)
 async def create_job(
     file: UploadFile = File(..., description="CSV file with 'name' and 'address' columns"),
-    source: str = Form("traveloka", description="Source name(s), comma-separated, or 'all'"),
+    source: str = Form("all", description="Source name(s), comma-separated, or 'all' (default)"),
     create_use_case: CreateCrawlJobUseCase = Depends(get_create_crawl_job_use_case),
     run_use_case: RunCrawlJobUseCase = Depends(get_run_crawl_job_use_case),
 ):
