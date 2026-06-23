@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HotelResultResponse(BaseModel):
@@ -16,16 +16,16 @@ class HotelResultResponse(BaseModel):
     name: Optional[str] = None
     accommodation_type: Optional[str] = None
     star_rating: Optional[str] = None
-    rating_summary: Optional[str] = None
+    rating_summary: List[str] = Field(default_factory=list)
     address: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    amenities: Optional[str] = None
-    facilities: Optional[str] = None
-    description: Optional[str] = None
-    reviews: List[str] = []
-    rooms: List[Dict[str, Any]] = []
-    photos: List[str] = []
+    amenities: List[str] = Field(default_factory=list)
+    facilities: List[str] = Field(default_factory=list)
+    description: List[str] = Field(default_factory=list)
+    reviews: List[List[str]] = Field(default_factory=list)
+    rooms: List[Dict[str, Any]] = Field(default_factory=list)
+    photos: List[str] = Field(default_factory=list)
     detail_url: Optional[str] = None
     error: Optional[str] = None
 

@@ -200,11 +200,11 @@ Each item in `results.<source>` is an object:
 | `query_id`, `query_name`, `query_address` | original input from the CSV (`query_id` is `null` if the CSV had no `id` column) |
 | `match_score` | similarity (0-1) between the input and the matched hotel |
 | `name`, `accommodation_type`, `star_rating` | name, property type, star rating |
-| `rating_summary` | review score + review count |
-| `address`, `latitude`, `longitude` | address and coordinates |
-| `amenities`, `facilities`, `description` | amenities, facilities, description |
+| `rating_summary` | review score + review count, exported as cleaned summary parts (for example `["8.6/10", "Very Good", "143 reviews"]`) |
+| `address`, `latitude`, `longitude` | cleaned primary address string and coordinates |
+| `amenities`, `facilities`, `description` | amenities/facilities are arrays of cleaned items; description is an array of cleaned paragraphs |
 | `photos` | list of photo URLs |
-| `reviews` | list of actual review/comment text |
+| `reviews` | list of reviews; each review is an array of meaningful cleaned text parts |
 | `rooms` | available rooms: name, bed type, breakfast, price, rooms left, cancellation policy |
 | `detail_url`, `error` | detail page URL, error message if the crawl failed |
 | `low_confidence` | `true` if the match score was too low — the result may be the wrong hotel |

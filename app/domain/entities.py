@@ -1,5 +1,7 @@
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+from .cleaning import clean_hotel_result_dict
 
 
 @dataclass(frozen=True)
@@ -33,14 +35,14 @@ class HotelResult:
     name: Optional[str] = None
     accommodation_type: Optional[str] = None
     star_rating: Optional[str] = None
-    rating_summary: Optional[str] = None
+    rating_summary: Optional[Union[str, List[str]]] = None
     address: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    amenities: Optional[str] = None
-    facilities: Optional[str] = None
-    description: Optional[str] = None
-    reviews: List[str] = field(default_factory=list)
+    amenities: Optional[Union[str, List[str]]] = None
+    facilities: Optional[Union[str, List[str]]] = None
+    description: Optional[Union[str, List[str]]] = None
+    reviews: List[Union[str, List[str]]] = field(default_factory=list)
     rooms: List[Dict[str, Any]] = field(default_factory=list)
     photos: List[str] = field(default_factory=list)
     detail_url: Optional[str] = None
@@ -52,5 +54,8 @@ class HotelResult:
             source=source, query_name=query.name, query_address=query.address, query_id=query.id
         )
 
-    def to_dict(self) -> dict:
+    def to_raw_dict(self) -> dict:
         return asdict(self)
+
+    def to_dict(self) -> dict:
+        return clean_hotel_result_dict(self.to_raw_dict())
