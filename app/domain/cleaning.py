@@ -30,6 +30,23 @@ _AMENITY_NOISE_LINES = {
     "most popular facilities",
     "read more",
 }
+_FACILITY_HEADER_LINES = {
+    "accommodation services",
+    "bar, cafe and lounge",
+    "business facilities",
+    "common space",
+    "connectivity",
+    "entertainment facility",
+    "food and drinks",
+    "general",
+    "hotel services",
+    "in-room facilities",
+    "nearby facilities",
+    "public facilities",
+    "shuttle service",
+    "things to do",
+    "transportation",
+}
 
 
 def clean_text(value: Any) -> Optional[str]:
@@ -134,9 +151,11 @@ def clean_lines(value: Any, noise_lines: Iterable[str] = ()) -> List[str]:
 
 def clean_facilities(value: Any) -> List[str]:
     items = []
-    for line in _text_lines(value):
+    for line in clean_lines(value):
         lower = line.lower()
         if lower in _COMMON_NOISE_LINES:
+            continue
+        if lower in _FACILITY_HEADER_LINES:
             continue
         if lower.startswith("all facilities in "):
             continue
@@ -184,6 +203,11 @@ def _clean_room(room: Dict[str, Any]) -> Dict[str, Any]:
 def _text_lines(value: Any) -> List[str]:
     if value is None:
         return []
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            lines.extend(_text_lines(item))
+        return lines
     text = _decode_and_strip_tags(str(value), block_tags_as_newlines=True)
     return [cleaned for line in text.splitlines() if (cleaned := clean_text(line))]
 
