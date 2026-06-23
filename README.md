@@ -3,8 +3,7 @@
 A FastAPI service that crawls hotel details from multiple sources, given a list of hotels (name + address) uploaded as a CSV:
 
 - **Traveloka** — crawled directly via Playwright/crawl4ai (no API key needed).
-- **TripAdvisor** — via RapidAPI.
-- **Booking.com** — via RapidAPI.
+- **Booking.com** — crawled directly via Playwright/crawl4ai (no API key needed).
 
 Every source implements the same **provider interface** (`HotelProviderPort`) and produces the same **result schema** (`HotelResult`), so jobs can run one or several sources at once and results can be compared/merged easily.
 
@@ -28,7 +27,7 @@ python3 main.py                # serves on http://localhost:8000
 **B. Run with Docker Compose**
 
 ```bash
-cp .env.example .env           # optional: only needed for TripAdvisor/Booking.com (RAPIDAPI_KEY)
+cp .env.example .env           # optional: HOST/PORT/OUTPUT_DIR overrides
 docker compose up --build      # serves on http://localhost:8000
 ```
 
@@ -39,7 +38,7 @@ curl http://localhost:8000/health
 open http://localhost:8000/docs   # Swagger UI
 ```
 
-See "Using the API" below for how to submit a crawl job. Full setup details (CSV format, RapidAPI config, plain `docker build`/`docker run`) are further down.
+See "Using the API" below for how to submit a crawl job. Full setup details (CSV format, plain `docker build`/`docker run`) are further down.
 
 ## Architecture
 
@@ -77,8 +76,7 @@ app/
       base.py                  BaseHotelProvider: shared crawl loop (retry, rate-limit, progress)
       registry.py               source name -> provider class
       traveloka/                 Playwright/crawl4ai scraper
-      tripadvisor/                RapidAPI client + field mapping
-      booking/                     RapidAPI client + field mapping
+      booking/                     Playwright/crawl4ai scraper
 
   presentation/             FastAPI-specific wiring
     schemas.py                Pydantic request/response DTOs
@@ -105,8 +103,7 @@ main.py                     entrypoint: runs uvicorn
 ## Requirements
 
 - Python 3.10+
-- Google Chrome/Chromium, managed automatically by Playwright (only needed for the Traveloka provider)
-- A RapidAPI key if you want to use the TripAdvisor/Booking.com providers
+- Google Chrome/Chromium, managed automatically by Playwright/crawl4ai
 
 ## Setup
 
@@ -118,11 +115,10 @@ pip install -r requirements.txt
 playwright install chromium       # browser for crawl4ai (Traveloka provider only)
 ```
 
-Create a `.env` from the template if you're using TripAdvisor/Booking.com:
+Create a `.env` from the template if you want to override defaults:
 
 ```bash
 cp .env.example .env
-# fill in RAPIDAPI_KEY=... in .env
 ```
 
 ## Running the server
@@ -200,7 +196,7 @@ Each item in `results.<source>` is an object:
 
 | Field | Meaning |
 |---|---|
-| `source` | data source: `traveloka` / `tripadvisor` / `booking` |
+| `source` | data source: `traveloka` / `booking` |
 | `query_id`, `query_name`, `query_address` | original input from the CSV (`query_id` is `null` if the CSV had no `id` column) |
 | `match_score` | similarity (0-1) between the input and the matched hotel |
 | `name`, `accommodation_type`, `star_rating` | name, property type, star rating |
@@ -213,23 +209,11 @@ Each item in `results.<source>` is an object:
 | `detail_url`, `error` | detail page URL, error message if the crawl failed |
 | `low_confidence` | `true` if the match score was too low — the result may be the wrong hotel |
 
-Not every source fills every field (e.g. TripAdvisor usually doesn't return `rooms`); unavailable fields are `null`/`[]`.
-
-## RapidAPI configuration (TripAdvisor / Booking.com)
-
-Defaults target the two most commonly subscribed RapidAPI products:
-
-- TripAdvisor: **tripadvisor-scraper** (host `tripadvisor-scraper.p.rapidapi.com`)
-- Booking.com: **Booking-com15** (host `booking-com15.p.rapidapi.com`)
-
-If you're subscribed to a different RapidAPI product (different host/endpoints), no code changes are needed for the host/path itself:
-
-1. Override the relevant settings via environment variables in `.env` (see `.env.example` and `app/infrastructure/config.py`).
-2. If the response JSON has a different field layout, adjust `_map_detail()` in `app/infrastructure/providers/tripadvisor/provider.py` or `app/infrastructure/providers/booking/provider.py` — the rest of the search/match/fetch flow stays the same.
+Not every source fills every field; unavailable fields are `null`/`[]`.
 
 ## Docker
 
-The compose service (`api`) builds from the local `Dockerfile`, maps port `8000`, and mounts `output/` so crawl results survive container restarts. `.env` is loaded if present but not required (Traveloka-only crawls don't need `RAPIDAPI_KEY`):
+The compose service (`api`) builds from the local `Dockerfile`, maps port `8000`, and mounts `output/` so crawl results survive container restarts. `.env` is loaded if present but not required:
 
 ```bash
 cp .env.example .env   # optional, see "Quick start" above
@@ -256,6 +240,5 @@ The image is built on `python:3.12-slim` and runs `crawl4ai-setup` at build time
 ## Known limitations
 
 - **Job store**: kept in the server process's memory, lost on restart. This also means **don't run more than one worker/replica** (e.g. `uvicorn --workers N>1`, multiple compose replicas) — each process would have its own job list, so polling a job created on a different worker would 404. Fine for a single-instance internal tool; if you need multiple instances or long-lived job history, swap `InMemoryJobRepository` for a DB/Redis-backed `JobRepositoryPort` implementation — not needed yet given the current scale.
-- **Traveloka**: relies on public free proxies, so reliability is low; for something more stable, switch to a paid proxy in `app/infrastructure/providers/traveloka/proxy.py`. Reviews are capped at `MAX_REVIEW_PAGES` pages (5 by default) — a large sample, not every review. `rooms` is empty if the hotel has no availability for the default search dates (tomorrow/day after). Traveloka can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/traveloka/config.py`.
-- **TripAdvisor**: the underlying RapidAPI product scrapes TripAdvisor live on each call and is occasionally flaky (intermittent 5xx / empty body) — `client.py` retries transient failures a couple of times before giving up. `rooms` isn't real room inventory (the product doesn't expose room types) — it's the OTA price-comparison list (Booking.com, Expedia, etc.), reshaped into the same dict keys Traveloka's rooms use.
-- **Booking.com**: the field mapping in `_map_detail()` is best-effort, based on the common response shape of Booking-com15 — it may need tuning to match your actual RapidAPI subscription (see "RapidAPI configuration" above).
+- **Traveloka**: reviews are capped at `MAX_REVIEW_PAGES` pages (5 by default) — a large sample, not every review. `rooms` is empty if the hotel has no availability for the default search dates (tomorrow/day after). Traveloka can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/traveloka/config.py`.
+- **Booking.com**: room/price data is currently empty because it requires reliable date-picker interaction. Booking.com can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/booking/config.py`.

@@ -28,7 +28,7 @@ class TravelokaProvider(BaseHotelProvider):
         self.run_cfg = None
 
     async def setup(self) -> None:
-        logger.info("Running Traveloka direct; free proxies make the React result page unreliable.")
+        logger.info("Running Traveloka direct browser session.")
         browser_cfg = BrowserConfig(headless=True, viewport_width=1400, viewport_height=900)
         self.run_cfg = CrawlerRunConfig(
             max_retries=0,

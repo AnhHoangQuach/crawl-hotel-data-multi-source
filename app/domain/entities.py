@@ -18,8 +18,8 @@ class HotelQuery:
 
 @dataclass
 class HotelResult:
-    """The one shape every provider (Traveloka, TripAdvisor, Booking.com,
-    ...) must fill in. Keeping this as a single entity is what lets the API
+    """The one shape every provider (Traveloka, Booking.com, ...) must fill
+    in. Keeping this as a single entity is what lets the API
     treat all sources identically and lets downstream consumers parse any
     job's results the same way regardless of source.
     """

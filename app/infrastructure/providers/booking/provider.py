@@ -12,10 +12,9 @@ from .scraper import SOURCE_NAME, HotelScraper
 
 logger = logging.getLogger(__name__)
 
-# Same bounded-retry shape as TripAdvisorProvider: 2 immediate attempts,
-# then (if both failed) a cooldown before one final attempt -- a hotel that
-# keeps failing can't hang the whole batch job, but a transient hiccup gets
-# a real second chance.
+# Bounded retry shape: 2 immediate attempts, then (if both failed) a cooldown
+# before one final attempt -- a hotel that keeps failing can't hang the whole
+# batch job, but a transient hiccup gets a real second chance.
 _ATTEMPT_PHASES = (2, 1)
 _RETRY_COOLDOWN_SECONDS = 60
 
@@ -23,24 +22,20 @@ _RETRY_COOLDOWN_SECONDS = 60
 class BookingProvider(BaseHotelProvider):
     """Playwright/crawl4ai-driven provider: searches booking.com directly
     and scrapes the best-matching hotel's page, same approach as
-    TravelokaProvider/TripAdvisorProvider. Replaces the previous
-    RapidAPI-backed implementation, which hit that subscription's request
-    limits.
+    TravelokaProvider.
 
-    Unlike TripAdvisor, booking.com's anti-bot (an AWS WAF JS challenge)
-    resolves automatically in a real/headless browser -- every selector in
-    `config.py` was verified against real, organically-fetched page HTML
-    while building this (search -> results -> detail), not guessed. The one
-    real gotcha found: an inline date-picker calendar can sit on top of the
-    results list and silently swallow clicks (see scraper.py).
+    Booking.com's anti-bot (an AWS WAF JS challenge) resolves automatically
+    in a real/headless browser -- every selector in `config.py` was verified
+    against real, organically-fetched page HTML while building this (search
+    -> results -> detail), not guessed. The one real gotcha found: an inline
+    date-picker calendar can sit on top of the results list and silently
+    swallow clicks (see scraper.py).
 
-    Deliberately runs direct only, no free-proxy fallback (unlike Traveloka/
-    TripAdvisor): direct connections already pass the WAF challenge
-    reliably every time in testing, while booking.com's destination search
-    is geo-biased by the requester's IP -- a free proxy in a random country
-    was confirmed to make it match a same-named hotel in the proxy's
-    country instead of the intended one. The fallback would trade a problem
-    that doesn't occur here for one that does.
+    Deliberately runs direct only, no free-proxy fallback: direct connections
+    already pass the WAF challenge reliably every time in testing, while
+    booking.com's destination search is geo-biased by the requester's IP -- a
+    free proxy in a random country was confirmed to make it match a
+    same-named hotel in the proxy's country instead of the intended one.
     """
 
     source_name = SOURCE_NAME

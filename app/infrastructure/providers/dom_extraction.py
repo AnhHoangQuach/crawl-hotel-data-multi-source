@@ -41,8 +41,8 @@ def first_working_selector(selector_candidates):
     """Join a list of candidate CSS selectors into one Playwright selector
     that matches whichever candidate is present (`,` is "or" in CSS).
 
-    Used for sites where the real selector can't be confirmed ahead of time
-    (e.g. unverified TripAdvisor markup) -- callers list every plausible
-    selector and this tries them all at once instead of picking one blindly.
+    Used for sites where the real selector has multiple variants -- callers
+    list every plausible selector and this tries them all at once instead of
+    picking one blindly.
     """
     return ", ".join(selector_candidates)

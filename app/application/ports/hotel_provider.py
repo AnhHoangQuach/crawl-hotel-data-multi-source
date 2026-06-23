@@ -8,10 +8,9 @@ ProgressCallback = Callable[[int, int, HotelResult], None]
 
 
 class HotelProviderPort(ABC):
-    """The contract every hotel data source (Traveloka, TripAdvisor,
-    Booking.com, ...) must satisfy. Use cases depend on this port, never on
-    a concrete provider, so adding a new source never requires touching
-    application code.
+    """The contract every hotel data source (Traveloka, Booking.com, ...)
+    must satisfy. Use cases depend on this port, never on a concrete
+    provider, so adding a new source never requires touching application code.
     """
 
     source_name: str

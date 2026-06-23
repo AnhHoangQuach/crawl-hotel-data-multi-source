@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 class BaseHotelProvider(HotelProviderPort):
     """Shared `crawl_many` template method: iterate queries, normalize
     errors into a HotelResult, rate-limit, log progress. Concrete providers
-    (Traveloka, TripAdvisor, Booking.com) only need to implement
-    `fetch_one()`.
+    (Traveloka, Booking.com) only need to implement `fetch_one()`.
     """
 
     source_name = "base"

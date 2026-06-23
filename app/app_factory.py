@@ -13,7 +13,7 @@ def create_app() -> FastAPI:
         title="Hotel Crawler API",
         description=(
             "Upload a CSV (name, address columns) to crawl hotel data from "
-            "Traveloka, TripAdvisor, and Booking.com behind one common interface."
+            "Traveloka and Booking.com behind one common interface."
         ),
         version="2.0.0",
     )

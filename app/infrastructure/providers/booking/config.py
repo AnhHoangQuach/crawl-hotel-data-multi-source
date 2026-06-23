@@ -2,11 +2,11 @@ import re
 
 HOMEPAGE_URL = "https://www.booking.com/"
 
-# --- Unlike TripAdvisor, every selector below was verified against real,
-# organically-fetched page HTML while building this (search -> results ->
-# detail). Booking.com's anti-bot is an AWS WAF JS challenge, not an
-# interactive CAPTCHA -- it resolves automatically in a real/headless
-# browser, so the live DOM was actually reachable for inspection.
+# --- Every selector below was verified against real, organically-fetched page
+# HTML while building this (search -> results -> detail). Booking.com's
+# anti-bot is an AWS WAF JS challenge, not an interactive CAPTCHA -- it
+# resolves automatically in a real/headless browser, so the live DOM was
+# actually reachable for inspection.
 
 SEARCH_INPUT_SELECTOR = "input[name='ss']"
 SUGGESTION_ITEM_SELECTOR = "li[id^='autocomplete-result-']"
@@ -54,5 +54,4 @@ MAX_REVIEWS = 20
 # checkout dates through the page's own date-picker widget. Verified that
 # passing ?checkin=...&checkout=... in the URL does NOT trigger it, and
 # clicking through the picker's day cells didn't reliably either. Left as
-# an empty list -- same as the old RapidAPI provider left it "minimal
-# pending confirmation" -- a scoped follow-up, not a regression.
+# an empty list -- a scoped follow-up, not a regression.

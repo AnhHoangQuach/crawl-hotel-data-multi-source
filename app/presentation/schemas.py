@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class HotelResultResponse(BaseModel):
     """Mirrors app.domain.entities.HotelResult -- the one shape every
-    provider (Traveloka, TripAdvisor, Booking.com, ...) fills in."""
+    provider (Traveloka, Booking.com, ...) fills in."""
 
     source: str
     query_name: str

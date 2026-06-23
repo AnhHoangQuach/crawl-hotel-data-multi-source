@@ -38,13 +38,13 @@ def _address_search_hint(address: str) -> str:
 class HotelScraper:
     """Drives one Playwright page through Booking.com's search flow and
     pulls detail-page data for the closest-matching hotel, mirroring the
-    Traveloka/TripAdvisor scrapers' search -> fuzzy-match -> detail flow.
+    Traveloka scraper's search -> fuzzy-match -> detail flow.
 
-    Unlike TripAdvisor, picking a suggestion here (even a hotel-type one)
-    and submitting always lands on an intermediate city/listing page first
-    -- verified directly, Booking.com never routes straight from the
-    homepage search to a specific property page -- so this always runs
-    both match stages (suggestion, then card).
+    Picking a suggestion here (even a hotel-type one) and submitting always
+    lands on an intermediate city/listing page first -- verified directly,
+    Booking.com never routes straight from the homepage search to a specific
+    property page -- so this always runs both match stages (suggestion, then
+    card).
 
     Bound as a crawl4ai `after_goto` hook, so `query` must be set on the
     instance before each `crawler.arun()` call.
@@ -75,7 +75,7 @@ class HotelScraper:
                 result.error = "No hotel results found on Booking.com."
                 return
 
-            # Same rationale as Traveloka/TripAdvisor: overall confidence is
+            # Same rationale as Traveloka: overall confidence is
             # bounded by whichever stage was less sure.
             score = min(suggestion_score, card_score)
             logger.info(
@@ -158,9 +158,8 @@ class HotelScraper:
                 hotel_idxs.append(i)
 
         # Restrict to suggestions explicitly flagged as a hotel (vs. a city
-        # or landmark), same purpose as the old RapidAPI provider's
-        # destination-type filter -- keeps non-hotel suggestions out of the
-        # fuzzy-match candidate pool.
+        # or landmark), keeping non-hotel suggestions out of the fuzzy-match
+        # candidate pool.
         candidate_idxs = hotel_idxs or list(range(len(texts)))
         candidate_texts = [texts[i] for i in candidate_idxs if i < len(texts)]
         if not candidate_texts:
