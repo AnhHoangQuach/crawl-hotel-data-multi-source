@@ -32,6 +32,11 @@ def _strip_accents(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
+def strip_accents(text: str) -> str:
+    """Return `text` without Vietnamese/Latin combining accents."""
+    return _strip_accents(text or "")
+
+
 def _normalize_token(token: str) -> str:
     return _PUNCT_RE.sub("", _strip_accents(token).lower())
 

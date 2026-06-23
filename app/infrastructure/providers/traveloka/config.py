@@ -8,6 +8,7 @@ SUGGESTION_ITEM_SELECTOR = "[data-testid^='accom_autocomplete_item_']"
 SEARCH_SUBMIT_SELECTOR = "[data-testid='search-submit-button']"
 HOTEL_CARD_NAME_SELECTOR = "[data-testid='tvat-hotelName']"
 HOTEL_CARD_LOCATION_SELECTOR = "[data-testid='tvat-hotelLocation']"
+EMPTY_LIST_SELECTOR = "[data-testid='empty-list'], [data-testid='accom-empty-list-content']"
 
 DISPLAY_NAME_SELECTOR = "[data-testid='display_name_label']"
 ACCOM_TYPE_SELECTOR = "[data-testid='header_accom_type']"

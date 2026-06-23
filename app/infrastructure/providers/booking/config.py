@@ -24,6 +24,8 @@ SEARCH_SUBMIT_SELECTOR = "button[type='submit']"
 # template navigates the current tab, while "title-link" opens the property
 # in a new tab (target="_blank"). The scraper has to handle both.
 HOTEL_CARD_LINK_SELECTOR = "a[data-testid='titleLink'], a[data-testid='title-link']"
+HOTEL_CARD_CONTAINER_SELECTOR = "[data-testid='property-card'], [data-testid='property-card-container']"
+HOTEL_CARD_ADDRESS_SELECTOR = "[data-testid='address'], [data-testid='address-link']"
 HOTEL_DETAIL_URL_RE = re.compile(r"/hotel/[a-z]{2}/")
 
 # Detail page. JSON-LD (extraction.extract_json_ld) covers name/address/
