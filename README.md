@@ -1,4 +1,4 @@
-# crawl-traveloka
+# crawl-hotel-data-multi-source
 
 A FastAPI service that crawls hotel details from multiple sources, given a list of hotels (name + address) uploaded as a CSV:
 
