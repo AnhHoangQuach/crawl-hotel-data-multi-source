@@ -25,13 +25,13 @@ def clear_result_details(result: HotelResult, error: str) -> None:
     result.name = None
     result.accommodation_type = None
     result.star_rating = None
-    result.rating_summary = None
+    result.rating_summary = []
     result.address = None
     result.latitude = None
     result.longitude = None
-    result.amenities = None
-    result.facilities = None
-    result.description = None
+    result.amenities = []
+    result.facilities = []
+    result.description = []
     result.reviews = []
     result.rooms = []
     result.photos = []

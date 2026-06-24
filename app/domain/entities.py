@@ -1,7 +1,26 @@
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from .cleaning import clean_hotel_result_dict
+
+_CRAWLED_SCALAR_FIELDS = (
+    "name",
+    "accommodation_type",
+    "star_rating",
+    "address",
+    "latitude",
+    "longitude",
+    "detail_url",
+)
+_CRAWLED_ARRAY_FIELDS = (
+    "rating_summary",
+    "amenities",
+    "facilities",
+    "description",
+    "reviews",
+    "rooms",
+    "photos",
+)
 
 
 @dataclass(frozen=True)
@@ -33,14 +52,14 @@ class HotelResult:
     name: Optional[str] = None
     accommodation_type: Optional[str] = None
     star_rating: Optional[str] = None
-    rating_summary: Optional[Union[str, List[str]]] = None
+    rating_summary: List[str] = field(default_factory=list)
     address: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    amenities: Optional[Union[str, List[str]]] = None
-    facilities: Optional[Union[str, List[str]]] = None
-    description: Optional[Union[str, List[str]]] = None
-    reviews: List[Union[str, List[str]]] = field(default_factory=list)
+    amenities: List[str] = field(default_factory=list)
+    facilities: List[str] = field(default_factory=list)
+    description: List[str] = field(default_factory=list)
+    reviews: List[List[str]] = field(default_factory=list)
     rooms: List[Dict[str, Any]] = field(default_factory=list)
     photos: List[str] = field(default_factory=list)
     detail_url: Optional[str] = None
@@ -56,4 +75,10 @@ class HotelResult:
         return asdict(self)
 
     def to_dict(self) -> dict:
-        return clean_hotel_result_dict(self.to_raw_dict())
+        cleaned = clean_hotel_result_dict(self.to_raw_dict())
+        if cleaned.get("error"):
+            for field_name in _CRAWLED_SCALAR_FIELDS:
+                cleaned[field_name] = None
+            for field_name in _CRAWLED_ARRAY_FIELDS:
+                cleaned[field_name] = []
+        return cleaned
