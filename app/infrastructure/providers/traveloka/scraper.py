@@ -1,11 +1,13 @@
 import logging
 import re
+from difflib import SequenceMatcher
 from typing import Optional
 
 from app.domain.entities import HotelQuery, HotelResult
 
-from ..dom_extraction import human_delay
-from ..search_text import build_search_text
+from ..dom_extraction import human_delay, safe_inner_text
+from ..search_text import build_search_text, normalize_search_text
+from ..validation import mentions_vietnam
 from . import config, extraction
 
 SOURCE_NAME = "traveloka"
@@ -25,12 +27,71 @@ class HotelScraper:
         self.query: Optional[HotelQuery] = None
         self.result: Optional[HotelResult] = None
 
+    def _normalized_name_terms(self):
+        normalized = normalize_search_text(self.query.name).lower()
+        return [w for w in normalized.split() if len(w) > 2]
+
+    def _address_terms(self):
+        terms = []
+        for part in (self.query.address or "").split(","):
+            normalized = normalize_search_text(part).lower()
+            normalized = re.sub(
+                r"\b(viet nam|vietnam|thanh pho|tp|city|province|tinh|quan|huyen|phuong|ward|district)\b",
+                " ",
+                normalized,
+            )
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized or any(ch.isdigit() for ch in normalized):
+                continue
+            if normalized not in terms:
+                terms.append(normalized)
+        return terms
+
+    def _name_score(self, text: str) -> int:
+        normalized = normalize_search_text(text).lower()
+        return sum(1 for term in self._normalized_name_terms() if term in normalized)
+
+    def _name_similarity(self, text: str) -> float:
+        query_name = normalize_search_text(self.query.name).lower()
+        candidate_name = normalize_search_text(text).lower()
+        if not query_name or not candidate_name:
+            return 0.0
+        return SequenceMatcher(None, query_name, candidate_name).ratio()
+
+    def _location_score(self, text: str) -> int:
+        normalized = normalize_search_text(text).lower()
+        score = 1 if mentions_vietnam(text) else 0
+        for term in self._address_terms():
+            if term in normalized:
+                score += len(term.split())
+        return score
+
+    def _matches_target_location(self, text: str) -> bool:
+        if mentions_vietnam(text):
+            return True
+        if not self._address_terms():
+            return True
+        return self._location_score(text) > 0
+
+    def _split_suggestion_text(self, text: str):
+        lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+        if not lines:
+            return "", ""
+        return lines[0], " ".join(lines[1:])
+
+    def _suggestion_matches_query(self, text: str) -> bool:
+        name, address = self._split_suggestion_text(text)
+        return self._name_similarity(name) > 0.5 and self._matches_target_location(address)
+
     async def after_goto_hook(self, page, context=None, **kwargs):
         result = HotelResult.empty(self.query, SOURCE_NAME)
         self.result = result
 
         try:
-            await self._open_search_results(page)
+            search_error = await self._open_search_results(page)
+            if search_error:
+                result.error = search_error
+                return
             best_idx = await self._pick_first_card(page)
             if best_idx is None:
                 result.error = (
@@ -87,10 +148,7 @@ class HotelScraper:
             pass
         await human_delay(page)
 
-        # Keep the default accommodation scope. Forcing the "Hotels" tab adds
-        # `ACCOMMODATION_TYPE-HOTEL` to the result URL and hides valid resort
-        # listings, e.g. "Hon Co Resort - Ca Na" returns "0 properties found"
-        # under that filter even though the autocomplete resolves the property.
+        await self._select_all_accommodation_tab(page)
 
         search_box = page.locator(config.SEARCH_INPUT_SELECTOR)
         # Generous timeout: through a slow/degraded free proxy the page can
@@ -112,15 +170,50 @@ class HotelScraper:
         suggestions = page.locator(config.SUGGESTION_ITEM_SELECTOR)
         await suggestions.first.wait_for(state="visible", timeout=10000)
 
-        # Trust Traveloka's own autocomplete ranking: always take the first
-        # suggestion instead of re-ranking the list by fuzzy match.
-        logger.info("[%s][search] selected_suggestion=0", SOURCE_NAME)
-        await suggestions.first.click(force=True)
+        best_suggestion = None
+        best_score = -1
+        for i in range(await suggestions.count()):
+            text = await safe_inner_text(suggestions.nth(i)) or ""
+            if not self._suggestion_matches_query(text):
+                continue
+            name, address = self._split_suggestion_text(text)
+            score = self._name_similarity(name) * 100 + self._location_score(address)
+            if score > best_score:
+                best_suggestion = i
+                best_score = score
+
+        if best_suggestion is None:
+            return "No autocomplete suggestion matching the query location was found on Traveloka."
+
+        logger.info(
+            "[%s][search] selected_suggestion=%d score=%.2f",
+            SOURCE_NAME,
+            best_suggestion,
+            best_score,
+        )
+        await suggestions.nth(best_suggestion).click(force=True)
         await human_delay(page)
 
         await page.locator(config.SEARCH_SUBMIT_SELECTOR).click(timeout=5000, force=True)
         await page.wait_for_url(re.compile(r".*/hotel/search.*"), timeout=15000)
         await human_delay(page)
+        return None
+
+    async def _select_all_accommodation_tab(self, page):
+        """Search from Traveloka's broad "All" accommodation tab.
+
+        Traveloka can keep the UI scoped to "Hotel" from a previous state,
+        which hides valid non-hotel autocomplete results. The all-tab is
+        text-rendered in the current locale, so use a localized exact-text
+        match and tolerate absence because the DOM changes by market/device.
+        """
+        try:
+            tab = page.get_by_text(config.ALL_ACCOMMODATION_TAB_RE).first
+            if await tab.count():
+                await tab.click(timeout=3000, force=True)
+                await human_delay(page)
+        except Exception:
+            logger.info("[%s][search] all_accommodation_tab_not_selected", SOURCE_NAME)
 
     async def _pick_first_card(self, page):
         name_el = page.locator(config.HOTEL_CARD_NAME_SELECTOR).first
@@ -139,15 +232,36 @@ class HotelScraper:
         if not names:
             return None
 
-        # Trust Traveloka's own search ranking: always take the top result
-        # card.
-        logger.info(
-            "[%s][card] selected_card=0 name=%r candidates=%d",
-            SOURCE_NAME,
-            names[0],
-            len(names),
-        )
-        return 0
+        locations = await extraction.extract_all_texts(page, config.HOTEL_CARD_LOCATION_SELECTOR)
+        best_idx = None
+        best_score = -1
+        for idx, name in enumerate(names):
+            location = locations[idx] if idx < len(locations) else ""
+            combined = f"{name} {location}"
+            if not self._matches_target_location(combined):
+                continue
+            if self._name_similarity(name) <= 0.5:
+                continue
+            score = self._name_score(name) * 10 + self._location_score(location)
+            if score > best_score:
+                best_idx = idx
+                best_score = score
+
+        if best_idx is not None:
+            location = locations[best_idx] if best_idx < len(locations) else ""
+            logger.info(
+                "[%s][card] selected_card=%d score=%d name=%r location=%r candidates=%d",
+                SOURCE_NAME,
+                best_idx,
+                best_score,
+                names[best_idx],
+                location,
+                len(names),
+            )
+            return best_idx
+
+        logger.info("[%s][card] no_card_matched_query_location candidates=%d", SOURCE_NAME, len(names))
+        return None
 
     async def _extract_detail(self, detail_page, result: HotelResult):
         result.detail_url = detail_page.url

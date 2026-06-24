@@ -3,6 +3,7 @@ import re
 HOMEPAGE_URL = "https://www.traveloka.com/en-vn"
 
 ACCOM_TYPE_PICKER_SELECTOR = "[data-testid='accom-type-picker']"
+ALL_ACCOMMODATION_TAB_RE = re.compile(r"^(Tất cả|Tat ca|All)$", re.IGNORECASE)
 SEARCH_INPUT_SELECTOR = "input[placeholder='City, hotel, place to go']"
 SUGGESTION_ITEM_SELECTOR = "[data-testid^='accom_autocomplete_item_']"
 SEARCH_SUBMIT_SELECTOR = "[data-testid='search-submit-button']"

@@ -1,23 +1,27 @@
 import csv
 import io
+import re
 from typing import List
 
 from app.domain.entities import HotelQuery
 from app.domain.exceptions import CsvParseError
 
-from .name_normalizer import clean_hotel_name, strip_accents
-
 NAME_HEADER_ALIASES = {"name", "hotel_name", "hotel", "ten", "ten_khach_san"}
 ADDRESS_HEADER_ALIASES = {"address", "city", "location", "dia_chi", "diachi"}
 ID_HEADER_ALIASES = {"id", "hotel_id", "staging_id", "ma_khach_san"}
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _find_column(fieldnames, aliases):
-    lowered = {f.strip().lower(): f for f in fieldnames}
+    lowered = {f.strip().lstrip("\ufeff").lower(): f for f in fieldnames}
     for alias in aliases:
         if alias in lowered:
             return lowered[alias]
     return None
+
+
+def _clean_csv_cell(value: str) -> str:
+    return _WHITESPACE_RE.sub(" ", value or "").strip()
 
 
 def parse_hotel_queries(text: str) -> List[HotelQuery]:
@@ -43,11 +47,10 @@ def parse_hotel_queries(text: str) -> List[HotelQuery]:
 
     queries = []
     for row in reader:
-        name = (row.get(name_col) or "").strip()
+        name = _clean_csv_cell(row.get(name_col) or "")
         if not name:
             continue
-        name = strip_accents(clean_hotel_name(name))
-        address = (row.get(addr_col) or "").strip() if addr_col else ""
-        row_id = (row.get(id_col) or "").strip() if id_col else ""
+        address = _clean_csv_cell(row.get(addr_col) or "") if addr_col else ""
+        row_id = _clean_csv_cell(row.get(id_col) or "") if id_col else ""
         queries.append(HotelQuery(name=name, address=address, id=row_id or None))
     return queries

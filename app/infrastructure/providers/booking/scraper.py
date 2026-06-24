@@ -3,8 +3,9 @@ from typing import Optional
 
 from app.domain.entities import HotelQuery, HotelResult
 
-from ..dom_extraction import human_delay
+from ..dom_extraction import human_delay, safe_inner_text
 from ..search_text import build_search_text
+from ..validation import clear_result_details, is_non_vietnam_location, mentions_vietnam
 from . import config, extraction
 
 SOURCE_NAME = "booking"
@@ -38,7 +39,10 @@ class HotelScraper:
         self.result = result
 
         try:
-            await self._search(page)
+            search_error = await self._search(page)
+            if search_error:
+                result.error = search_error
+                return
             await self._dismiss_calendar_overlay(page)
 
             idx = await self._pick_first_card(page)
@@ -50,6 +54,11 @@ class HotelScraper:
             await human_delay(detail_page)
             result.detail_url = detail_page.url
             await extraction.extract_detail_fields(detail_page, result)
+            if is_non_vietnam_location(result.address):
+                clear_result_details(
+                    result,
+                    "Skipped: selected Booking.com property is outside Vietnam.",
+                )
         except Exception as e:
             result.error = str(e)
 
@@ -71,10 +80,11 @@ class HotelScraper:
         await page.wait_for_url(config.HOTEL_DETAIL_URL_RE, timeout=15000)
         return page
 
-    async def _search(self, page) -> None:
+    async def _search(self, page):
         """Type the query into the homepage search box and pick the first
-        autocomplete suggestion, preferring one explicitly flagged as a
-        hotel (vs. a city/landmark) when any are present.
+        autocomplete suggestion explicitly flagged as a hotel and located in
+        Vietnam. If Booking only returns cities/landmarks or foreign hotels,
+        treat it as not found instead of submitting a broad wrong search.
         """
         search_box = page.locator(config.SEARCH_INPUT_SELECTOR).first
         await search_box.wait_for(state="visible", timeout=45000)
@@ -95,19 +105,30 @@ class HotelScraper:
         try:
             await suggestions.first.wait_for(state="visible", timeout=8000)
         except Exception:
-            await self._submit_search(page)
-            return
+            return "No Booking.com hotel autocomplete suggestions found."
 
-        hotel_idxs = []
+        hotel_idx = None
+        hotel_count = 0
         for i in range(await suggestions.count()):
-            if await suggestions.nth(i).locator(config.SUGGESTION_HOTEL_ICON_SELECTOR).count():
-                hotel_idxs.append(i)
-        real_idx = hotel_idxs[0] if hotel_idxs else 0
+            suggestion = suggestions.nth(i)
+            if not await suggestion.locator(config.SUGGESTION_HOTEL_ICON_SELECTOR).count():
+                continue
+            hotel_count += 1
+            text = await safe_inner_text(suggestion) or ""
+            if mentions_vietnam(text):
+                hotel_idx = i
+                break
 
-        logger.info("[%s][search] selected_suggestion=%d", SOURCE_NAME, real_idx)
-        await suggestions.nth(real_idx).click(timeout=5000, force=True)
+        if hotel_idx is None:
+            if hotel_count:
+                return "No Vietnam hotel autocomplete suggestion found on Booking.com."
+            return "No hotel autocomplete suggestion found on Booking.com."
+
+        logger.info("[%s][search] selected_suggestion=%d", SOURCE_NAME, hotel_idx)
+        await suggestions.nth(hotel_idx).click(timeout=5000, force=True)
         await human_delay(page)
         await self._submit_search(page)
+        return None
 
     async def _submit_search(self, page):
         try:
@@ -162,6 +183,15 @@ class HotelScraper:
         if not texts:
             return None
 
+        addresses = await self._card_addresses(page)
+        if addresses and is_non_vietnam_location(addresses[0]):
+            logger.info(
+                "[%s][card] rejected_card=0 outside_vietnam address=%r",
+                SOURCE_NAME,
+                addresses[0],
+            )
+            return None
+
         # Trust Booking.com's own search ranking: always take the top
         # result card.
         logger.info(
@@ -171,3 +201,15 @@ class HotelScraper:
             len(texts),
         )
         return 0
+
+    async def _card_addresses(self, page):
+        try:
+            return await page.eval_on_selector_all(
+                config.HOTEL_CARD_CONTAINER_SELECTOR,
+                f"""els => els.map(e => {{
+                    const addressEl = e.querySelector("{config.HOTEL_CARD_ADDRESS_SELECTOR}");
+                    return addressEl ? (addressEl.textContent || '') : '';
+                }})""",
+            )
+        except Exception:
+            return []
