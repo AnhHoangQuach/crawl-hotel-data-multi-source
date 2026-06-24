@@ -44,12 +44,7 @@ class BaseHotelProvider(HotelProviderPort):
                     result = HotelResult.empty(query, self.source_name)
                     result.error = str(e)
 
-                if result.name:
-                    status = "OK"
-                elif result.low_confidence:
-                    status = "SKIP"
-                else:
-                    status = "FAIL"
+                status = "OK" if result.name else "FAIL"
                 logger.info("  -> %s: %s", status, result.name or result.error)
                 results.append(result)
 

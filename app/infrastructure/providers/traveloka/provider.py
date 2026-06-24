@@ -23,7 +23,7 @@ class TravelokaProvider(BaseHotelProvider):
     delay_range = (3, 6)
 
     def __init__(self, settings: Settings):
-        self.scraper = HotelScraper(settings.match_score_threshold)
+        self.scraper = HotelScraper()
         self.crawler = None
         self.run_cfg = None
 

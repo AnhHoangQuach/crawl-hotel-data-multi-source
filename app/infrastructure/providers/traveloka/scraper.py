@@ -2,10 +2,10 @@ import logging
 import re
 from typing import Optional
 
-from app.application.services.fuzzy_matcher import best_match_index, best_suggestion_index
 from app.domain.entities import HotelQuery, HotelResult
 
 from ..dom_extraction import human_delay
+from ..search_text import build_search_text
 from . import config, extraction
 
 SOURCE_NAME = "traveloka"
@@ -14,14 +14,14 @@ logger = logging.getLogger(__name__)
 
 class HotelScraper:
     """Drives one Playwright page through Traveloka's search flow and pulls
-    full detail-page data for the closest-matching hotel card.
+    full detail-page data for the top-ranked hotel card, trusting
+    Traveloka's own search ranking rather than re-scoring candidates.
 
     Bound as a crawl4ai `after_goto` hook, so `query` must be set on the
     instance before each `crawler.arun()` call.
     """
 
-    def __init__(self, match_score_threshold: float):
-        self.match_score_threshold = match_score_threshold
+    def __init__(self):
         self.query: Optional[HotelQuery] = None
         self.result: Optional[HotelResult] = None
 
@@ -30,33 +30,13 @@ class HotelScraper:
         self.result = result
 
         try:
-            suggestion_score = await self._open_search_results(page)
-            best_idx, card_score = await self._pick_best_match(page)
+            await self._open_search_results(page)
+            best_idx = await self._pick_first_card(page)
             if best_idx is None:
-                result.match_score = round(card_score, 3)
-                result.low_confidence = True
                 result.error = (
                     "Skipped: no Traveloka result cards were found after search. "
                     "The selected destination may have no available accommodations, "
                     "or Traveloka returned an empty result list."
-                )
-                return
-
-            # Overall confidence is bounded by whichever step was least sure:
-            # a great card match means nothing if the autocomplete already
-            # sent us into the wrong city/country.
-            score = min(suggestion_score, card_score)
-            result.match_score = round(score, 3)
-            result.low_confidence = score < self.match_score_threshold
-
-            if result.low_confidence:
-                # Don't bother opening the detail page -- whatever card we'd
-                # click is probably the wrong hotel, so returning its data
-                # would be worse than returning nothing.
-                result.error = (
-                    f"Skipped: no confidently matching hotel found "
-                    f"(score={score:.2f} < {self.match_score_threshold}). "
-                    "Check the name/address in the CSV."
                 )
                 return
 
@@ -118,33 +98,31 @@ class HotelScraper:
         await search_box.wait_for(state="visible", timeout=45000)
         await search_box.click()
         await human_delay(page)
-        await search_box.press_sequentially(self.query.name, delay=80)
+        search_text = build_search_text(self.query.name, self.query.address)
+        logger.info(
+            "[%s][search] query_name=%r query_address=%r search_text=%r",
+            SOURCE_NAME,
+            self.query.name,
+            self.query.address,
+            search_text,
+        )
+        await search_box.press_sequentially(search_text, delay=80)
         await human_delay(page)
 
         suggestions = page.locator(config.SUGGESTION_ITEM_SELECTOR)
         await suggestions.first.wait_for(state="visible", timeout=10000)
-        suggestion_texts = await extraction.extract_all_texts(page, config.SUGGESTION_ITEM_SELECTOR)
 
-        suggestion_idx, suggestion_score = best_suggestion_index(
-            self.query.name, self.query.address, suggestion_texts
-        )
-        logger.info(
-            "[%s][search] query=%r selected_suggestion=%d score=%.3f text=%r",
-            SOURCE_NAME,
-            self.query.name,
-            suggestion_idx,
-            suggestion_score,
-            suggestion_texts[suggestion_idx] if suggestion_idx < len(suggestion_texts) else "",
-        )
-        await suggestions.nth(suggestion_idx).click(force=True)
+        # Trust Traveloka's own autocomplete ranking: always take the first
+        # suggestion instead of re-ranking the list by fuzzy match.
+        logger.info("[%s][search] selected_suggestion=0", SOURCE_NAME)
+        await suggestions.first.click(force=True)
         await human_delay(page)
 
         await page.locator(config.SEARCH_SUBMIT_SELECTOR).click(timeout=5000, force=True)
         await page.wait_for_url(re.compile(r".*/hotel/search.*"), timeout=15000)
         await human_delay(page)
-        return suggestion_score
 
-    async def _pick_best_match(self, page):
+    async def _pick_first_card(self, page):
         name_el = page.locator(config.HOTEL_CARD_NAME_SELECTOR).first
         try:
             await name_el.wait_for(state="visible", timeout=15000)
@@ -152,27 +130,24 @@ class HotelScraper:
             empty_list = page.locator(config.EMPTY_LIST_SELECTOR).first
             try:
                 if await empty_list.count() and await empty_list.is_visible(timeout=1000):
-                    return None, 0.0
+                    return None
             except Exception:
                 pass
             raise
 
         names = await extraction.extract_all_texts(page, config.HOTEL_CARD_NAME_SELECTOR)
-        locations = await extraction.extract_all_texts(page, config.HOTEL_CARD_LOCATION_SELECTOR)
         if not names:
-            return None, 0.0
-        best_idx, score = best_match_index(self.query.name, self.query.address, names, locations)
+            return None
+
+        # Trust Traveloka's own search ranking: always take the top result
+        # card.
         logger.info(
-            "[%s][card] query=%r selected_card=%d score=%.3f name=%r location=%r candidates=%d",
+            "[%s][card] selected_card=0 name=%r candidates=%d",
             SOURCE_NAME,
-            self.query.name,
-            best_idx,
-            score,
-            names[best_idx] if best_idx < len(names) else "",
-            locations[best_idx] if best_idx < len(locations) else "",
+            names[0],
             len(names),
         )
-        return best_idx, score
+        return 0
 
     async def _extract_detail(self, detail_page, result: HotelResult):
         result.detail_url = detail_page.url

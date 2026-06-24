@@ -11,8 +11,6 @@ class HotelResultResponse(BaseModel):
     query_name: str
     query_address: Optional[str] = None
     query_id: Optional[str] = None
-    match_score: Optional[float] = None
-    low_confidence: Optional[bool] = None
     name: Optional[str] = None
     accommodation_type: Optional[str] = None
     star_rating: Optional[str] = None
