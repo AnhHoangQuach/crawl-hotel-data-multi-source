@@ -1,10 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Callable, List, Optional
+from typing import List
 
 from app.domain.entities import HotelQuery, HotelResult
-
-# Fires after each hotel is crawled: on_progress(done_count, total_count, result).
-ProgressCallback = Callable[[int, int, HotelResult], None]
 
 
 class HotelProviderPort(ABC):
@@ -20,9 +17,5 @@ class HotelProviderPort(ABC):
         """Crawl a single hotel and return a populated HotelResult."""
 
     @abstractmethod
-    async def crawl_many(
-        self,
-        queries: List[HotelQuery],
-        on_progress: Optional[ProgressCallback] = None,
-    ) -> List[HotelResult]:
+    async def crawl_many(self, queries: List[HotelQuery]) -> List[HotelResult]:
         """Crawl every query, in order, returning one HotelResult each."""

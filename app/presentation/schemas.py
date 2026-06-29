@@ -1,6 +1,26 @@
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class CrawlRequest(BaseModel):
+    """One hotel to crawl per call. `id` is an optional passthrough for the
+    caller's own record id (e.g. a staging-table row id), carried through to
+    `query_id` in the results so it can be correlated back without relying
+    on name matching."""
+
+    id: Optional[str] = None
+    name: str = Field(..., min_length=1)
+    address: Optional[str] = ""
+    source: str = "all"
+
+    @field_validator("name")
+    @classmethod
+    def _name_must_not_be_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name must not be blank")
+        return v
 
 
 class HotelResultResponse(BaseModel):
@@ -28,22 +48,6 @@ class HotelResultResponse(BaseModel):
     error: Optional[str] = None
 
 
-class JobProgressResponse(BaseModel):
-    done: int
-    total: int
-
-
-class JobSummaryResponse(BaseModel):
-    job_id: str
-    status: str
-    sources: List[str]
-    total_hotels: int
-    created_at: str
-    progress: Dict[str, JobProgressResponse]
-    error: Optional[str] = None
-
-
-class JobResultsResponse(BaseModel):
-    job_id: str
-    status: str
-    results: Dict[str, List[HotelResultResponse]]
+# Response of POST /crawl: source name -> that source's HotelResult, e.g.
+# {"traveloka": {...}, "booking": {...}}.
+CrawlResponse = Dict[str, HotelResultResponse]

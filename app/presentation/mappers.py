@@ -1,28 +1,20 @@
-from app.domain.job import Job
+import re
+from typing import Dict
 
-from .schemas import HotelResultResponse, JobProgressResponse, JobResultsResponse, JobSummaryResponse
+from app.domain.entities import HotelQuery, HotelResult
 
+from .schemas import CrawlRequest, CrawlResponse, HotelResultResponse
 
-def job_to_summary(job: Job) -> JobSummaryResponse:
-    return JobSummaryResponse(
-        job_id=job.id,
-        status=job.status.value,
-        sources=job.sources,
-        total_hotels=len(job.hotels),
-        created_at=job.created_at.isoformat(),
-        progress={
-            source: JobProgressResponse(done=p.done, total=p.total) for source, p in job.progress.items()
-        },
-        error=job.error,
-    )
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
-def job_to_results(job: Job) -> JobResultsResponse:
-    return JobResultsResponse(
-        job_id=job.id,
-        status=job.status.value,
-        results={
-            source: [HotelResultResponse(**r.to_dict()) for r in results]
-            for source, results in job.results.items()
-        },
-    )
+def _clean(value) -> str:
+    return _WHITESPACE_RE.sub(" ", value or "").strip()
+
+
+def request_to_hotel_query(request: CrawlRequest) -> HotelQuery:
+    return HotelQuery(name=_clean(request.name), address=_clean(request.address), id=_clean(request.id) or None)
+
+
+def results_to_response(results: Dict[str, HotelResult]) -> CrawlResponse:
+    return {source: HotelResultResponse(**result.to_dict()) for source, result in results.items()}
