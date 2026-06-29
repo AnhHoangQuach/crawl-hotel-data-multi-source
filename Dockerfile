@@ -17,9 +17,6 @@ COPY . .
 
 EXPOSE 8000
 
-# Single worker only: job state lives in an in-memory repository
-# (app/infrastructure/persistence/in_memory_job_repository.py), so a second
-# worker process would not see jobs created on the first one.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 

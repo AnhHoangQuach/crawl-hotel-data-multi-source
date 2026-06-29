@@ -1,13 +1,13 @@
 # crawl-hotel-data-multi-source
 
-A FastAPI service that crawls hotel details from multiple sources, given a list of hotels (name + address) uploaded as a CSV:
+A FastAPI service that crawls hotel details from multiple sources, given one hotel (id + name + address) per call:
 
 - **Traveloka** — crawled directly via Playwright/crawl4ai (no API key needed).
 - **Booking.com** — crawled directly via Playwright/crawl4ai (no API key needed).
 
-Every source implements the same **provider interface** (`HotelProviderPort`) and produces the same **result schema** (`HotelResult`), so jobs can run one or several sources at once and results can be compared/merged easily.
+Every source implements the same **provider interface** (`HotelProviderPort`) and produces the same **result schema** (`HotelResult`), so a request can run one or several sources at once and results can be compared/merged easily.
 
-Crawling is triggered through the **API**: upload a CSV, the server creates a background **job**, you poll its status, then fetch the JSON results once it's done.
+Crawling is triggered through the **API**: POST one hotel's JSON object to `/crawl` and the server crawls it synchronously, returning the result in the same response once it's done. To crawl many hotels, call `/crawl` once per hotel.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ curl http://localhost:8000/health
 open http://localhost:8000/docs   # Swagger UI
 ```
 
-See "Using the API" below for how to submit a crawl job. Full setup details (CSV format, plain `docker build`/`docker run`) are further down.
+See "Using the API" below for how to submit a crawl request. Full setup details (request format, plain `docker build`/`docker run`) are further down.
 
 ## Architecture
 
@@ -48,43 +48,35 @@ The codebase follows a layered (clean) architecture, with dependencies pointing 
 app/
   domain/                  Framework-free business model
     entities.py             HotelQuery, HotelResult
-    job.py                   Job, JobProgress
-    enums.py                  JobStatus
     exceptions.py              DomainError and subtypes
 
   application/             Use cases + the ports infrastructure must implement
     ports/
       hotel_provider.py      HotelProviderPort (contract every source implements)
-      job_repository.py       JobRepositoryPort (contract job storage implements)
       result_storage.py        ResultStoragePort (contract result persistence implements)
     services/
-      csv_parser.py            parse uploaded CSV text into HotelQuery list
       source_resolver.py        validate a requested source string against available providers
     use_cases/
-      create_crawl_job.py      parse CSV, validate sources, register a Job
-      run_crawl_job.py           execute a Job's crawl across its sources
-      get_job.py / get_job_results.py / list_jobs.py
+      crawl_hotels.py          validate sources, crawl one hotel across every source, return results
 
   infrastructure/          Concrete adapters for the ports above
     config.py                Settings (env vars / .env), single source of config
-    persistence/
-      in_memory_job_repository.py
     storage/
-      json_result_writer.py    writes results to output/<job_id>/hotels_result_<source>.json
+      json_result_writer.py    writes results to output/<request_id>/hotels_result_<source>.json
     providers/
-      base.py                  BaseHotelProvider: shared crawl loop (retry, rate-limit, progress)
+      base.py                  BaseHotelProvider: shared crawl loop (error handling, rate-limit, logging)
       registry.py               source name -> provider class
       traveloka/                 Playwright/crawl4ai scraper
       booking/                     Playwright/crawl4ai scraper
 
   presentation/             FastAPI-specific wiring
     schemas.py                Pydantic request/response DTOs
-    mappers.py                  domain entities -> DTOs
+    mappers.py                  DTOs <-> domain entities
     dependencies.py              FastAPI Depends() wiring (DI)
     error_handlers.py             maps domain exceptions to HTTP responses
     routers/
       health.py
-      jobs.py
+      crawl.py
 
   app_factory.py            FastAPI app factory (create_app())
 
@@ -97,7 +89,7 @@ main.py                     entrypoint: runs uvicorn
 2. Implement `async def fetch_one(self, query: HotelQuery) -> HotelResult`, starting from `HotelResult.empty(query, "<name>")`.
 3. Register the class in `PROVIDER_REGISTRY` in `app/infrastructure/providers/registry.py`.
 
-`BaseHotelProvider` already handles iterating the hotel list, normalizing errors into a `HotelResult`, rate-limiting, logging, and progress reporting — a new provider only needs to fetch data for one hotel. No other layer needs to change.
+`BaseHotelProvider` already handles normalizing errors into a `HotelResult`, rate-limiting, and logging — a new provider only needs to fetch data for one hotel. No other layer needs to change.
 
 ## Requirements
 
@@ -131,51 +123,30 @@ The server listens on `http://0.0.0.0:8000` by default (override via `HOST`/`POR
 
 ## Using the API
 
-### 1. Create a crawl job (upload a CSV)
+### Crawl a hotel (one hotel per call)
 
-The CSV needs a `name` column; `address` is optional but improves matching when multiple hotels share a name. An optional `id` column (e.g. your own staging-table row id) is carried through to `query_id` in the results, so you can correlate them back without relying on name matching (sample: `hotels.csv`):
-
-```csv
-id,name,address
-84110,Muong Thanh Luxury Phu Quoc Hotel,"Kien Giang"
-84112,THE SEA PHÚ QUỐC,"Kien Giang"
-```
+Send a JSON body for a single hotel: `name` is required; `address` is optional but improves matching when multiple hotels share a name. The optional `id` (e.g. your own staging-table row id) is carried through to `query_id` in the result, so you can correlate it back without relying on name matching. `source` is optional:
 
 ```bash
-curl -X POST http://localhost:8000/jobs \
-  -F "file=@hotels.csv" \
-  -F "source=traveloka"          # or: "traveloka,booking" / "all" (default if omitted)
+curl -X POST http://localhost:8000/crawl \
+  -H "Content-Type: application/json" \
+  -d '{
+        "id": "84110",
+        "name": "Muong Thanh Luxury Phu Quoc Hotel",
+        "address": "Kien Giang",
+        "source": "traveloka"
+      }'
 ```
 
-Response:
+`source` is comma-separated (`"traveloka,booking"`) or `"all"` (default if omitted). To crawl a list of hotels, call `/crawl` once per hotel (sequentially or in parallel, as your client prefers).
+
+The request blocks until the hotel has been crawled across every requested source, then returns one response keyed by source name directly:
 
 ```json
 {
-  "job_id": "a1b2c3...",
-  "status": "pending",
-  "sources": ["traveloka"],
-  "total_hotels": 2,
-  "created_at": "2026-06-22T08:00:00+00:00",
-  "progress": {"traveloka": {"done": 0, "total": 2}},
-  "error": null
+  "traveloka": { /* one HotelResult, see schema below */ }
 }
 ```
-
-### 2. Poll job progress
-
-```bash
-curl http://localhost:8000/jobs/a1b2c3...
-```
-
-`status` moves through `pending` -> `running` -> `done` (or `failed`). `progress` shows how many hotels have been crawled per source.
-
-### 3. Fetch results
-
-```bash
-curl http://localhost:8000/jobs/a1b2c3.../results
-```
-
-Returns `{"job_id": ..., "status": "done", "results": {"traveloka": [...], "booking": [...]}}` — each item follows the schema described below. Calling this before the job is done returns `409`.
 
 ### Other endpoints
 
@@ -183,20 +154,17 @@ Returns `{"job_id": ..., "status": "done", "results": {"traveloka": [...], "book
 |---|---|---|
 | GET | `/health` | health check |
 | GET | `/sources` | list of supported source names |
-| GET | `/jobs` | list all jobs (newest first) |
-| GET | `/jobs/{job_id}` | one job's status + progress |
-| GET | `/jobs/{job_id}/results` | one job's crawl results |
 
-Each job's results are also written to `output/<job_id>/hotels_result_<source>.json` for debugging/archival. The in-memory job list is lost on server restart, but those files persist independently.
+Each request's results are also written to `output/<request_id>/hotels_result_<source>.json` for debugging/archival, using an internally generated id you don't need to track.
 
 ## Result schema (shared by every source)
 
-Each item in `results.<source>` is an object:
+Each top-level `<source>` key in the response maps to an object:
 
 | Field | Meaning |
 |---|---|
 | `source` | data source: `traveloka` / `booking` |
-| `query_id`, `query_name`, `query_address` | original input from the CSV (`query_id` is `null` if the CSV had no `id` column) |
+| `query_id`, `query_name`, `query_address` | original input from the request (`query_id` is `null` if the hotel had no `id`) |
 | `name`, `accommodation_type`, `star_rating` | name, property type, star rating |
 | `rating_summary` | review score + review count, exported as cleaned summary parts (for example `["8.6/10", "Very Good", "143 reviews"]`) |
 | `address`, `latitude`, `longitude` | cleaned primary address string and coordinates |
@@ -232,10 +200,10 @@ docker run --rm -p 8000:8000 \
 
 Once the container is running, call the API as described above (`http://localhost:8000`).
 
-The image is built on `python:3.12-slim` and runs `crawl4ai-setup` at build time to install Playwright/Chromium plus the required OS dependencies. The container runs a single uvicorn worker — see "Known limitations" below for why.
+The image is built on `python:3.12-slim` and runs `crawl4ai-setup` at build time to install Playwright/Chromium plus the required OS dependencies.
 
 ## Known limitations
 
-- **Job store**: kept in the server process's memory, lost on restart. This also means **don't run more than one worker/replica** (e.g. `uvicorn --workers N>1`, multiple compose replicas) — each process would have its own job list, so polling a job created on a different worker would 404. Fine for a single-instance internal tool; if you need multiple instances or long-lived job history, swap `InMemoryJobRepository` for a DB/Redis-backed `JobRepositoryPort` implementation — not needed yet given the current scale.
+- **Synchronous request**: `/crawl` blocks for the entire duration of the crawl (one hotel, every requested source) before responding. There's no job/polling layer, so a slow request ties up the connection until it finishes — make sure your client and any reverse proxy use a generous timeout. If you need to crawl many hotels, call `/crawl` once per hotel rather than batching.
 - **Traveloka**: reviews are capped at `MAX_REVIEW_PAGES` pages (5 by default) — a large sample, not every review. `rooms` is empty if the hotel has no availability for the default search dates (tomorrow/day after). Traveloka can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/traveloka/config.py`.
 - **Booking.com**: room/price data is currently empty because it requires reliable date-picker interaction. Booking.com can change its page structure at any time — if the scraper stops finding data, check the selectors in `app/infrastructure/providers/booking/config.py`.

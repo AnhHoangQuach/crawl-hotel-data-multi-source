@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import random
-from typing import List, Optional
+from typing import List
 
-from app.application.ports.hotel_provider import HotelProviderPort, ProgressCallback
+from app.application.ports.hotel_provider import HotelProviderPort
 from app.domain.entities import HotelQuery, HotelResult
 
 logger = logging.getLogger(__name__)
@@ -29,14 +29,12 @@ class BaseHotelProvider(HotelProviderPort):
     async def fetch_one(self, query: HotelQuery) -> HotelResult:
         raise NotImplementedError
 
-    async def crawl_many(
-        self, queries: List[HotelQuery], on_progress: Optional[ProgressCallback] = None
-    ) -> List[HotelResult]:
+    async def crawl_many(self, queries: List[HotelQuery]) -> List[HotelResult]:
         results: List[HotelResult] = []
-        total = len(queries)
+        last_index = len(queries) - 1
         await self.setup()
         try:
-            for query in queries:
+            for index, query in enumerate(queries):
                 logger.info("[%s] crawling: %s (%s)", self.source_name, query.name, query.address or "no address")
                 try:
                     result = await self.fetch_one(query)
@@ -48,10 +46,9 @@ class BaseHotelProvider(HotelProviderPort):
                 logger.info("  -> %s: %s", status, result.name or result.error)
                 results.append(result)
 
-                if on_progress:
-                    on_progress(len(results), total, result)
-
-                if self.delay_range:
+                # Only pace *between* hotels in the same browser session -- no
+                # point delaying after the last (or only) one before returning.
+                if self.delay_range and index < last_index:
                     await asyncio.sleep(random.uniform(*self.delay_range))
         finally:
             await self.teardown()

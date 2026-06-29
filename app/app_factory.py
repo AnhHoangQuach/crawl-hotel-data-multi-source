@@ -12,8 +12,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Hotel Crawler API",
         description=(
-            "Upload a CSV (name, address columns) to crawl hotel data from "
-            "Traveloka and Booking.com behind one common interface."
+            "Submit one hotel (id, name, address) per call to crawl hotel data "
+            "from Traveloka and Booking.com behind one common interface."
         ),
         version="2.0.0",
     )
