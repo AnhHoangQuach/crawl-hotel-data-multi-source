@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     # --- Server ---
     host: str = "0.0.0.0"
     port: int = 8000
-    output_dir: str = "output"
 
     # --- Shared provider tuning ---
     request_timeout_seconds: float = 20.0
